@@ -22,11 +22,7 @@ public:
         num_nodes = 0;
         overwrit = 0;
 
-        pthread_mutexattr_t Attr;
-        pthread_mutexattr_init(&Attr);
-        pthread_mutexattr_settype(&Attr, PTHREAD_MUTEX_RECURSIVE);
-
-        pthread_mutex_init(&lock, &Attr);
+        pthread_rwlock_init(&lock,NULL);
     };
 
     int slicecmp(Slice &a, Slice &b)
@@ -57,7 +53,7 @@ public:
 
     int num_nodes;
 
-    pthread_mutex_t lock;
+    pthread_rwlock_t lock;
 
     struct Node *makeNode(Slice &key, Slice &value)
     {
@@ -220,7 +216,7 @@ public:
 
     bool get(Slice &key, Slice &value)
     {
-        pthread_mutex_lock(&lock);
+        pthread_rwlock_rdlock(&lock);
         Slice *res = search(root, key);
         if (res)
         {
@@ -228,19 +224,18 @@ public:
             value.data = (char *)malloc(value.size);
             strncpy(value.data, res->data, value.size);
             //value is valid
-            pthread_mutex_unlock(&lock);
+            pthread_rwlock_unlock(&lock);
             return true;
         }
         is_found_flag = true;
-        pthread_mutex_unlock(&lock);
+        pthread_rwlock_unlock(&lock);
         return false;
     }
 
     bool put(Slice &key, Slice &value)
     {
-        pthread_mutex_lock(&lock);
-        Slice tempval;
-        bool should_increment = !get(key, tempval);
+        pthread_rwlock_wrlock(&lock);
+        bool should_increment = !(search(root, key));
         root = insert(root, key, value, should_increment);
         bool retval = is_overwritten;
         if (!is_overwritten)
@@ -248,33 +243,32 @@ public:
             // num_nodes++;
         }
         is_overwritten = false;
-        pthread_mutex_unlock(&lock);
+        pthread_rwlock_unlock(&lock);
         return retval;
     }
 
     bool del(Slice &key)
     {
-        pthread_mutex_lock(&lock);
-        Slice val;
-        bool key_exists = get(key, val);
+        pthread_rwlock_wrlock(&lock);
+        bool key_exists = search(root, key);
         if (!key_exists)
         {
             num_nodes--;
-            pthread_mutex_unlock(&lock);
+            pthread_rwlock_unlock(&lock);
             return false;
         }
         root = del(root, key);
-        pthread_mutex_unlock(&lock);
+        pthread_rwlock_unlock(&lock);
         return true;
     }
 
     bool get(int N, Slice &key, Slice &value)
     {
-        pthread_mutex_lock(&lock);
+        pthread_rwlock_rdlock(&lock);
         struct Node *nth = getnth(root, N);
         if (nth == NULL)
         {
-            pthread_mutex_unlock(&lock);
+            pthread_rwlock_unlock(&lock);
             return false;
         }
 
@@ -286,22 +280,21 @@ public:
         value.data = (char *)malloc(nth->value.size);
         strncpy(value.data, nth->value.data, value.size);
 
-        pthread_mutex_unlock(&lock);
+        pthread_rwlock_unlock(&lock);
         return true;
     }
 
     bool del(int N)
     {
-        pthread_mutex_lock(&lock);
-        Slice key, value;
-        bool nth = get(N, key, value);
+        pthread_rwlock_wrlock(&lock);
+        struct Node* nth = getnth(root, N);
         if (!nth)
         {
-            pthread_mutex_unlock(&lock);
+            pthread_rwlock_unlock(&lock);
             return false;
         }
-        del(key);
-        pthread_mutex_unlock(&lock);
+        root = del(root, nth->key);
+        pthread_rwlock_unlock(&lock);
         return true;
     }
 };
